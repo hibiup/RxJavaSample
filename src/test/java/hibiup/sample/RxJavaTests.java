@@ -6,6 +6,7 @@ import io.reactivex.ObservableOnSubscribe;
 import io.reactivex.Observer;
 import io.reactivex.annotations.NonNull;
 import io.reactivex.disposables.Disposable;
+import io.reactivex.functions.BiFunction;
 import io.reactivex.functions.Consumer;
 import io.reactivex.functions.Function;
 import junit.framework.TestCase;
@@ -127,6 +128,64 @@ public class RxJavaTests extends TestCase {
             @Override
             public void accept(@NonNull String s) throws Exception {
                 System.out.println("accept : " + s +"\n" );
+            }
+        });
+    }
+
+    @Test
+    public void testZipTwoObservables() {
+        /** 可以通过 Observable.zip 合并两个 Observable．最终配对出的 Observable 发射事件数目只和少的那个相同．*/
+
+        Observable<String> o1 = Observable.create(new ObservableOnSubscribe<String>() {
+            @Override
+            public void subscribe(@NonNull ObservableEmitter<String> e) throws Exception {
+                if (!e.isDisposed()) {
+                    System.out.println("Observable1 emit String: A");
+                    e.onNext("A");
+                    System.out.println("Observable1 emit String: B");
+                    e.onNext("B");
+                    System.out.println("Observable1 emit String: C");
+                    e.onNext("C");
+                }
+            }
+        });
+
+        Observable<Integer> o2 = Observable.create(new ObservableOnSubscribe<Integer>() {
+            @Override
+            public void subscribe(@NonNull ObservableEmitter<Integer> e) throws Exception {
+                if (!e.isDisposed()) {
+                    System.out.println("Observable2 emit Integer : 1");
+                    e.onNext(1);
+                    System.out.println("Observable2 emit Integer : 2");
+                    e.onNext(2);
+                    System.out.println("Observable2 emit Integer : 3");
+                    e.onNext(3);
+                    System.out.println("Observable2 emit Integer : 4");
+                    e.onNext(4);
+                    System.out.println("Observable2 emit Integer : 5");
+                    e.onNext(5);
+                }
+            }
+        });
+
+        /** 合并上面的两个 Observable */
+        Observable.zip(o1, o2, new BiFunction<String, Integer, String>() {
+            @Override
+            public String apply(@NonNull String s, @NonNull Integer integer) throws Exception {
+                return s + integer;
+            }
+        })
+        /**
+         * 合并上面的两个 Observable．合并行为是轮询执行的，而不是等到所有的 Observable 数据都接收到后才执行：
+         *
+         * (o1->o2->zip) => (o1->o2->zip) => ...
+         *
+         * 但是会随着短的 Observable 数据结束而结束．
+         * */
+        .subscribe(new Consumer<String>() {
+            @Override
+            public void accept(@NonNull String s) throws Exception {
+                System.out.println("zip : accept : " + s);
             }
         });
     }

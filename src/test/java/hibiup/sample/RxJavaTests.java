@@ -1,16 +1,19 @@
 package hibiup.sample;
 
-import io.reactivex.Observable;
-import io.reactivex.ObservableEmitter;
-import io.reactivex.ObservableOnSubscribe;
-import io.reactivex.Observer;
+import io.reactivex.*;
 import io.reactivex.annotations.NonNull;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.functions.BiFunction;
 import io.reactivex.functions.Consumer;
 import io.reactivex.functions.Function;
+import io.reactivex.schedulers.Schedulers;
 import junit.framework.TestCase;
 import org.junit.Test;
+import sun.rmi.runtime.Log;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class RxJavaTests extends TestCase {
 
@@ -168,7 +171,10 @@ public class RxJavaTests extends TestCase {
             }
         });
 
-        /** 合并上面的两个 Observable */
+        /** 合并上面的两个 Observable *
+         *
+         * zip 只有一个 apply 方法, 返回一个 Observable
+         */
         Observable.zip(o1, o2, new BiFunction<String, Integer, String>() {
             @Override
             public String apply(@NonNull String s, @NonNull Integer integer) throws Exception {
@@ -188,5 +194,75 @@ public class RxJavaTests extends TestCase {
                 System.out.println("zip : accept : " + s);
             }
         });
+    }
+
+    @Test
+    public void testContactObservable() {
+        /** 和 zip 不同，concat 用于将若干个 observable 串联起来*/
+        Observable.concat(
+                Observable.just(1,2,3),
+                Observable.just(4,5,6)
+        ).subscribe(new Consumer<Integer>() {
+            @Override
+            public void accept(@NonNull Integer integer) throws Exception {
+                System.out.println("concat : "+ integer );
+            }
+        });
+    }
+
+    @Test
+    public void testFlatMap() {
+        /** FlatMap 可以把一个发射器  Observable 通过某种方法转换为多个 Observables，然后再把这些分散的 Observables装进一个
+         * 单一的发射器 Observable。但有个需要注意的是，flatMap 并不能保证事件的顺序。*/
+        Observable.create(new ObservableOnSubscribe<Integer>() {
+            @Override
+            public void subscribe(@NonNull ObservableEmitter<Integer> e) throws Exception {
+                /** 1)  fire 3 次 */
+                e.onNext(1);
+                e.onNext(2);
+                e.onNext(3);
+            }
+            /** 2) flatMap 可以将数据映射到新的 Observable */
+        }).flatMap((Function<Integer, ObservableSource<String>>) integer -> {
+            List<String> list = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                list.add("I am value " + integer);
+            }
+            int delayTime = (int) (1 + Math.random() * 10);
+            /** 2-1) 映射出三个新 Observable. 这三个新的 Observable 将会并发执行,只受 delayTime 的影响,不受 flatMap 接收到的顺序影响. */
+            return Observable.fromIterable(list).delay(delayTime, TimeUnit.MILLISECONDS);
+        }).subscribeOn(Schedulers.newThread())
+                .subscribe(new Consumer<String>() {
+                    @Override
+                    public void accept(@NonNull String s) throws Exception {
+                        System.out.println("flatMap : accept : " + s);
+                    }
+                });
+    }
+
+    @Test
+    public void testConcatMap() {
+        /** 与 flatMap 不同的是, concatMap return 的 Obserable 会依然保持接受到的顺序 */
+        Observable.create(new ObservableOnSubscribe<Integer>() {
+            @Override
+            public void subscribe(@NonNull ObservableEmitter<Integer> e) throws Exception {
+                e.onNext(1);
+                e.onNext(2);
+                e.onNext(3);
+            }
+        }).concatMap((Function<Integer, ObservableSource<String>>) integer -> {
+            List<String> list = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                list.add("I am value " + integer);
+            }
+            int delayTime = (int) (1 + Math.random() * 10);
+            return Observable.fromIterable(list).delay(delayTime, TimeUnit.MILLISECONDS);
+        }).subscribeOn(Schedulers.newThread())
+                .subscribe(new Consumer<String>() {
+                    @Override
+                    public void accept(@NonNull String s) throws Exception {
+                        System.out.println("flatMap : accept : " + s);
+                    }
+                });
     }
 }

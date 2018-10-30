@@ -9,7 +9,8 @@ import io.reactivex.functions.Function;
 import io.reactivex.schedulers.Schedulers;
 import junit.framework.TestCase;
 import org.junit.Test;
-import sun.rmi.runtime.Log;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -264,5 +265,88 @@ public class RxJavaTests extends TestCase {
                         System.out.println("flatMap : accept : " + s);
                     }
                 });
+    }
+
+    @Test
+    public void testBackpressure() {
+        /*
+         * 在数据流从上游生产者向下游消费者传输的过程中，上游生产速度大于下游消费速度，导致下游的 Buffer 溢出，
+         * 这种现象就叫做 Backpressure 出现。重点不在于「上游生产速度大于下游消费速度」，而在于 Buffer 溢出。
+         *
+         * RxJava 中解决背压的类是 Flowable
+         **/
+
+        final int bufferSize = 10;
+        Flowable.create(new FlowableOnSubscribe<Integer>() {
+                @Override
+                public void subscribe(FlowableEmitter<Integer> emitter) throws Exception {
+                    /** 1) 模拟不断产生事件 */
+                    new Thread(() -> {
+                        int i = 0;
+                        while (true) {
+                            emitter.onNext(++i);
+                            /** 休眠 1 毫秒*/
+                            try {
+                                Thread.sleep(1);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }).start();
+                }
+            },
+            /** 2) 设置 buffer 策略，超过就丢弃. 其它策略包括保留最后一个（LATEST），尽可能保存（BUFFER） */
+            BackpressureStrategy.DROP
+        )
+        /** 3) 设置观测者线程必须处在不同线程中，同时设置 buffer 大小 */
+        .observeOn(Schedulers.newThread(), false, bufferSize)
+        .subscribe(new Subscriber<Integer>() {
+            Subscription subscription;
+            int last=0;
+
+            @Override
+            public void onSubscribe(Subscription s) {
+                System.out.println("onSubscribe()");
+                /** 3) 保存 Subscription*/
+                this.subscription = s;
+                /** 4) 请求下一个事件 */
+                this.subscription.request(1);
+            }
+
+            @Override
+            public void onNext(Integer i) {
+                /** 如果发现数据丢失，打印警告 */
+                if(i != last + 1)
+                    System.out.println("Data lost...!!");
+                last = i;
+                System.out.println("onNext(" + i + ")");
+
+                /** 假设每 10 毫秒处理一个数据 */
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                /** 4) 请求下一个事件 */
+                this.subscription.request(last);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                throwable.printStackTrace();
+            }
+
+            @Override
+            public void onComplete() {
+                System.exit(0);
+            }
+        });
+
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }
